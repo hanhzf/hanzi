@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>红砖汉字城堡</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+        #input-area {
+            margin: 20px;
+        }
+        #game-area {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 800px;
+        }
+        #bricks-area, #castle-area {
+            width: 45%;
+            min-height: 300px;
+            background-color: #fff;
+            padding: 10px;
+        }
+        #castle-area {
+            position: relative;
+            border: 2px dashed #999;
+        }
+        .brick {
+            width: 50px;
+            height: 50px;
+            background-color: #ff6b6b;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 5px;
+            cursor: move;
+            font-size: 24px;
+            user-select: none;
+        }
+        #castle-area .brick {
+            position: absolute;
+            background-color: transparent;
+            color: #333;
+        }
+        #message {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <h1>红砖汉字城堡</h1>
+    <div id="input-area">
+        <input type="text" id="char-input" maxlength="1" placeholder="输入一个汉字">
+        <button onclick="startGame()">开始</button>
+    </div>
+    <div id="game-area">
+        <div id="bricks-area"></div>
+        <div id="castle-area"></div>
+    </div>
+    <div id="message"></div>
+    <div id="loading" style="display: none;">加载中...</div>
+
+    <script>
+        let chaiziMapping = {};
+        let currentChar = '';
+        let placedBricks = 0;
+
+        function loadChaiziData() {
+            document.getElementById('loading').style.display = 'flex';
+            fetch('./chaizi-jt.txt') // {{ edit_1 }}
+                .then(response => response.text())
+                .then(data => {
+                    const lines = data.split('\n');
+                    lines.forEach(line => {
+                        const parts = line.trim().split('\t');
+                        if (parts.length > 1) {
+                            const char = parts[0];
+                            const components = parts[1].split(' ');
+                            chaiziMapping[char] = components;
+                        }
+                    });
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('message').textContent = '数据加载完成，请输入汉字开始游戏！';
+                })
+                .catch(error => {
+                    console.error('Error loading chaizi data:', error);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('message').textContent = '数据加载失败，请刷新页面重试。';
+                });
+        }
+
+        function startGame() {
+            currentChar = document.getElementById('char-input').value;
+            if (currentChar in chaiziMapping) {
+                placedBricks = 0;
+                const parts = chaiziMapping[currentChar];
+                const bricksArea = document.getElementById('bricks-area');
+                const castleArea = document.getElementById('castle-area');
+                bricksArea.innerHTML = '';
+                castleArea.innerHTML = '';
+
+                parts.forEach((part, index) => {
+                    const brick = document.createElement('div');
+                    brick.className = 'brick';
+                    brick.textContent = part;
+                    brick.draggable = true;
+                    brick.id = `brick-${index}`;
+                    brick.addEventListener('dragstart', drag);
+                    bricksArea.appendChild(brick);
+                });
+
+                document.getElementById('message').textContent = '拖动红砖块到右侧区域来搭建汉字！';
+            } else {
+                document.getElementById('message').textContent = '抱歉，这个汉字还没有添加到游戏中或输入不正确。';
+            }
+        }
+
+        function drag(ev) {
+            ev.dataTransfer.setData("text", ev.target.id);
+        }
+
+        function allowDrop(ev) {
+            ev.preventDefault();
+        }
+
+        function drop(ev) {
+            ev.preventDefault();
+            const data = ev.dataTransfer.getData("text");
+            const draggedElement = document.getElementById(data);
+            const clone = draggedElement.cloneNode(true);
+            clone.style.position = 'absolute';
+            clone.style.left = `${ev.clientX - ev.target.getBoundingClientRect().left}px`;
+            clone.style.top = `${ev.clientY - ev.target.getBoundingClientRect().top}px`;
+            clone.style.backgroundColor = 'transparent';
+            clone.style.color = '#333';
+            clone.addEventListener('mousedown', startDragging);
+            ev.target.appendChild(clone);
+            
+            if (draggedElement.parentNode.id === 'bricks-area') {
+                draggedElement.remove();
+                placedBricks++;
+                checkCompletion();
+            }
+        }
+
+        function startDragging(e) {
+            const element = e.target;
+            const startX = e.clientX - element.getBoundingClientRect().left;
+            const startY = e.clientY - element.getBoundingClientRect().top;
+
+            function moveElement(e) {
+                const castleArea = document.getElementById('castle-area');
+                const castleRect = castleArea.getBoundingClientRect();
+                let newX = e.clientX - castleRect.left - startX;
+                let newY = e.clientY - castleRect.top - startY;
+
+                // 确保元素不会移出castle-area
+                newX = Math.max(0, Math.min(newX, castleRect.width - element.offsetWidth));
+                newY = Math.max(0, Math.min(newY, castleRect.height - element.offsetHeight));
+
+                element.style.left = `${newX}px`;
+                element.style.top = `${newY}px`;
+            }
+
+            function stopDragging() {
+                document.removeEventListener('mousemove', moveElement);
+                document.removeEventListener('mouseup', stopDragging);
+            }
+
+            document.addEventListener('mousemove', moveElement);
+            document.addEventListener('mouseup', stopDragging);
+        }
+
+        function checkCompletion() {
+            if (placedBricks === chaiziMapping[currentChar].length) {
+                document.getElementById('message').textContent = '太棒了！你成功搭建了汉字！';
+            }
+        }
+
+        // 设置拖放区域
+        const castleArea = document.getElementById('castle-area');
+        castleArea.addEventListener('dragover', allowDrop);
+        castleArea.addEventListener('drop', drop);
+
+        // 页面加载完成后，加载汉字拆解数据
+        window.onload = loadChaiziData;
+    </script>
+</body>
+</html>
